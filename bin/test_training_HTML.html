@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Language Processing Model</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+</head>
+<body>
+    <script>
+        // Sample data: More complex greetings and responses
+        const data = [
+            { input: "hi", output: "Hello there!" },
+            { input: "hello", output: "Hi! How can I assist you today?" },
+            { input: "good morning", output: "Good morning! Hope you have a great day!" },
+            { input: "how are you", output: "I'm just a program, but I'm doing well! How about you?" },
+            { input: "what is your name", output: "I am your virtual assistant!" },
+            { input: "tell me a joke", output: "Why don't scientists trust atoms? Because they make up everything!" },
+            { input: "goodbye", output: "Goodbye! Have a nice day!" }
+        ];
+
+        const vocab = [...new Set(data.flatMap(entry => [entry.input, entry.output]))]; // Create vocabulary
+        const maxLength = Math.max(...data.map(entry => Math.max(entry.input.split(' ').length, entry.output.split(' ').length)));
+
+        // Function to convert text to a tensor
+        function textToTensor(text) {
+            const inputVector = Array(maxLength).fill(0).map(() => Array(vocab.length).fill(0));
+            const words = text.split(' ');
+
+            words.forEach((word, index) => {
+                const wordIndex = vocab.indexOf(word.toLowerCase());
+                if (wordIndex !== -1) {
+                    inputVector[index][wordIndex] = 1; // One-hot encoding for each word
+                }
+            });
+
+            return tf.tensor3d([inputVector], [1, maxLength, vocab.length]); // Shape: [samples, maxLength, vocabSize]
+        }
+
+        // Create an advanced sequential model with Bidirectional LSTM
+        function createAdvancedModel() {
+            const model = tf.sequential();
+
+            model.add(tf.layers.lstm({units: 128, returnSequences: true, inputShape: [maxLength, vocab.length]}));
+            model.add(tf.layers.bidirectional({layer: tf.layers.lstm({units: 128})}));
+            model.add(tf.layers.dense({units: 64, activation: 'relu'}));
+            model.add(tf.layers.dense({units: vocab.length, activation: 'softmax'})); // Output layer
+
+            model.compile({
+                optimizer: 'adam',
+                loss: 'sparseCategoricalCrossentropy',
+                metrics: ['accuracy']
+            });
+
+            return model;
+        }
+
+        // Generate training data
+        function generateTrainingData() {
+            const xs = [];
+            const ys = [];
+
+            data.forEach(entry => {
+                xs.push(textToTensor(entry.input));
+                const outputIndex = vocab.indexOf(entry.output);
+                if (outputIndex !== -1) {
+                    ys.push(outputIndex);
+                }
+            });
+
+            return {
+                xs: tf.concat(xs), 
+                ys: tf.tensor1d(ys, 'int32') // Shape: [samples]
+            };
+        }
+
+        // Train the model
+        async function trainAdvancedModel() {
+            const {xs, ys} = generateTrainingData();
+            const model = createAdvancedModel();
+
+            await model.fit(xs, ys, {
+                epochs: 300,
+                batchSize: 32, // Increase the batch size for better performance
+                validationSplit: 0.2,
+                callbacks: {
+                    onEpochEnd: (epoch, logs) => {
+                        console.log(`Epoch ${epoch}: loss = ${logs.loss}`);
+                    }
+                }
+            });
+
+            console.log('Advanced language model training complete!');
+            return model;
+        }
+
+        // Predict response based on input text
+        async function predictResponse(model, inputText) {
+            const inputTensor = textToTensor(inputText);
+            const predictions = model.predict(inputTensor);
+
+            // Cast predictions to float32
+            const floatPredictions = predictions.cast('float32');
+
+            // Ensure we retrieve the predicted class
+            const responseIndex = floatPredictions.argMax(2).dataSync()[0]; // Get the index of the highest probability
+
+            console.log(`Input: "${inputText}" → Response: "${vocab[responseIndex]}"`);
+        }
+
+        // Run the training and prediction
+        (async function() {
+            await tf.setBackend('webgl'); // Use WebGL for acceleration
+            const model = await trainAdvancedModel();
+            
+            // Test responses with more complex inputs
+            const testInputs = ["hi", "good morning", "how are you", "tell me a joke", "what is your name", "goodbye"];
+            for (const input of testInputs) {
+                await predictResponse(model, input);
+            }
+        })();
+    </script>
+</body>
+</html>
